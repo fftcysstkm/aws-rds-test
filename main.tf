@@ -176,6 +176,9 @@ resource "aws_instance" "rds_test_public_ec2" {
     subnet_id = aws_subnet.rds_test_public_subnet_1.id
     associate_public_ip_address = true
     vpc_security_group_ids = [ aws_security_group.rds_test_public_ec2_sg.id ]
+
+    iam_instance_profile = aws_iam_instance_profile.test_rds_instance_profile.name
+
     key_name = "test-keypair-2"
     tags = {
       Name = "rds_test_public_ec2"
@@ -285,4 +288,39 @@ resource "aws_eip" "rds_test_public_eip" {
 resource "aws_eip_association" "rds_test_public_eip_association" {
   instance_id   = aws_instance.rds_test_public_ec2.id
   allocation_id = aws_eip.rds_test_public_eip.id
+}
+
+##########################################
+# IAMロール
+##########################################
+# RDSへのアクセス権限を持つIAMロールを作成
+data "aws_iam_policy" "rds_full_access" {
+  arn = "arn:aws:iam::aws:policy/AmazonRDSFullAccess"
+}
+
+resource "aws_iam_role" "test_rds_role" {
+  name = "test-rds-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "test_rds_role_policy_attachment" {
+  policy_arn = data.aws_iam_policy.rds_full_access.arn
+  role       = aws_iam_role.test_rds_role.name
+}
+
+resource "aws_iam_instance_profile" "test_rds_instance_profile" {
+  name = "test-rds-instance-profile"
+  role = aws_iam_role.test_rds_role.name
 }
