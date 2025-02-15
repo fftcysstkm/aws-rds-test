@@ -186,6 +186,17 @@ resource "aws_instance" "rds_test_public_ec2" {
 }
 
 ##########################################
+# ElasticIP
+##########################################
+resource "aws_eip" "rds_test_public_eip" {
+  domain = "vpc"
+}
+resource "aws_eip_association" "rds_test_public_eip_association" {
+  instance_id   = aws_instance.rds_test_public_ec2.id
+  allocation_id = aws_eip.rds_test_public_eip.id
+}
+
+##########################################
 # セキュリティグループ
 ##########################################
 # EC2用
@@ -280,14 +291,35 @@ resource "aws_rds_cluster_instance" "my_database_instance_replica" {
   publicly_accessible  = false
 }
 
-
-# ElasticIP
-resource "aws_eip" "rds_test_public_eip" {
-  domain = "vpc"
+##########################################
+# Auto Scalingポリシー
+##########################################
+resource "aws_appautoscaling_target" "replicas" {
+  service_namespace  = "rds"
+  resource_id        = "cluster:${aws_rds_cluster.my_database.cluster_identifier}"
+  scalable_dimension = "rds:cluster:ReadReplicaCount"
+  min_capacity       = 1
+  max_capacity       = 2
 }
-resource "aws_eip_association" "rds_test_public_eip_association" {
-  instance_id   = aws_instance.rds_test_public_ec2.id
-  allocation_id = aws_eip.rds_test_public_eip.id
+
+resource "aws_appautoscaling_policy" "my_auto_scaling_policy" {
+  name               = "auto-scaling-1"
+  policy_type        = "TargetTrackingScaling"
+  service_namespace  = aws_appautoscaling_target.replicas.service_namespace
+  resource_id        = aws_appautoscaling_target.replicas.resource_id
+  scalable_dimension = aws_appautoscaling_target.replicas.scalable_dimension
+
+  target_tracking_scaling_policy_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "RDSReaderAverageCPUUtilization"
+    }
+
+    target_value       = 1
+    scale_in_cooldown  = 60
+    scale_out_cooldown = 60
+  }
+
+  depends_on = [ aws_appautoscaling_target.replicas ]
 }
 
 ##########################################
